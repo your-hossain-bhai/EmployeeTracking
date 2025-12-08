@@ -1,0 +1,71 @@
+# pubspec.yaml
+# Smart Employee Tracking & Management Application
+# Package dependencies for the Flutter project
+# 
+# NOTE: Run `flutter pub get` after cloning to install dependencies
+# Run `flutterfire configure` to generate firebase_options.dart
+
+name: smart_employee
+description: A Smart Employee Tracking & Management solution with real-time location tracking, geofencing, and attendance management.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Firebase
+  firebase_core: ^3.8.1
+  firebase_auth: ^5.3.4
+  cloud_firestore: ^5.6.0
+  firebase_storage: ^12.3.7
+  firebase_messaging: ^15.1.6
+
+  # Maps & Location
+  flutter_map: ^7.0.0
+  latlong2: ^0.9.0
+  geolocator: ^13.0.2
+  permission_handler: ^11.3.1
+
+  # State Management
+  flutter_bloc: ^8.1.6
+  provider: ^6.1.2
+
+  # Local Storage
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+
+  # Networking & Connectivity
+  connectivity_plus: ^6.1.1
+  http: ^1.2.2
+
+  # UI & Utilities
+  flutter_local_notifications: ^18.0.1
+  image_picker: ^1.1.2
+  intl: ^0.19.0
+  url_launcher: ^6.3.1
+  uuid: ^4.5.1
+  equatable: ^2.0.5
+  path_provider: ^2.1.5
+
+  # Material Design
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  build_runner: ^2.4.13
+  hive_generator: ^2.0.1
+  mockito: ^5.4.4
+  bloc_test: ^9.1.7
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/images/
+    - assets/icons/

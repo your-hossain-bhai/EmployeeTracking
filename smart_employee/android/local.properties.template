@@ -1,0 +1,11 @@
+# local.properties.template
+# Copy this file to local.properties and fill in the values
+
+# Flutter SDK path - automatically set by Flutter
+# flutter.sdk=/path/to/flutter
+
+# Android SDK path - automatically set by Android Studio
+# sdk.dir=/path/to/android/sdk
+
+# NOTE: Removed Google Maps API Key - using flutter_map with MapTiler instead
+# Maps are now powered by MapTiler (API key configured in Dart code)

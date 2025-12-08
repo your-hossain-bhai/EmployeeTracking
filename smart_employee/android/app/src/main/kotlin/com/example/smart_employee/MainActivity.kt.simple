@@ -1,0 +1,17 @@
+// MainActivity.kt
+// Main Activity for Smart Employee Android Application
+//
+// Simplified version using Flutter embedding v2
+
+package com.example.smart_employee
+
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugins.GeneratedPluginRegistrant
+
+class MainActivity : FlutterActivity() {
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        GeneratedPluginRegistrant.registerWith(flutterEngine)
+    }
+}
