@@ -398,5 +398,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ## 👥 Support
 
 For support, please contact:
-- Email: support@democorp.com
+- Email: muhammadhossain.27.2001@gmail.com
 - GitHub Issues: [Create Issue](https://github.com/ShuvroLabs/Employee-Manager/issues)
