@@ -1,13 +1,15 @@
 // auth_service.dart
 // Authentication Service
-// 
+//
 // This service handles user authentication via Firebase Auth.
 // It provides methods for sign in, sign up, sign out, and
 // manages the current user state.
 
 import 'dart:async';
+import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 
 import '../models/user_model.dart';
 
@@ -111,6 +113,59 @@ class AuthService {
         .collection('users')
         .doc(user.id)
         .update(user.copyWith(updatedAt: DateTime.now()).toFirestore());
+  }
+
+  /// Upload profile photo to Firebase Storage and return the download URL
+  Future<String> uploadProfilePhoto(String userId, File imageFile) async {
+    try {
+      final storage = FirebaseStorage.instance;
+      final ref = storage.ref().child('profile_photos/$userId.jpg');
+
+      // Check if file exists
+      if (!await imageFile.exists()) {
+        throw Exception('Image file does not exist');
+      }
+
+      print('Uploading photo for user: $userId');
+      print('File path: ${imageFile.path}');
+      print('File size: ${await imageFile.length()} bytes');
+
+      // Upload the file with metadata
+      final uploadTask = ref.putFile(
+        imageFile,
+        SettableMetadata(
+          contentType: 'image/jpeg',
+          customMetadata: {'userId': userId},
+        ),
+      );
+
+      // Wait for upload to complete
+      final snapshot = await uploadTask;
+      print('Upload complete. Bytes transferred: ${snapshot.bytesTransferred}');
+
+      // Get the download URL
+      final downloadUrl = await ref.getDownloadURL();
+      print('Download URL: $downloadUrl');
+      return downloadUrl;
+    } catch (e) {
+      print('Error uploading photo: $e');
+      rethrow;
+    }
+  }
+
+  /// Update user profile photo
+  Future<void> updateProfilePhoto(String userId, File imageFile) async {
+    // Upload the photo and get URL
+    final photoUrl = await uploadProfilePhoto(userId, imageFile);
+
+    // Update user document with new photo URL
+    await _firestore.collection('users').doc(userId).update({
+      'photoUrl': photoUrl,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // Also update Firebase Auth profile
+    await _auth.currentUser?.updatePhotoURL(photoUrl);
   }
 
   /// Send password reset email

@@ -1,8 +1,10 @@
 // profile_page.dart
 // Profile Page
-// 
+//
 // This page allows employees to view and edit their profile,
 // manage account settings, and view app information.
+
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
@@ -67,7 +69,8 @@ class ProfilePage extends StatelessWidget {
                 OutlinedButton.icon(
                   icon: const Icon(Icons.edit),
                   label: const Text('Edit Profile'),
-                  onPressed: () => _showEditProfileDialog(context, user.displayName),
+                  onPressed: () =>
+                      _showEditProfileDialog(context, user.displayName),
                 ),
                 const SizedBox(height: 32),
 
@@ -173,8 +176,11 @@ class ProfilePage extends StatelessWidget {
                       side: const BorderSide(color: Colors.red),
                     ),
                     onPressed: () {
-                      context.read<AuthController>().add(AuthSignOutRequested());
-                      Navigator.of(context).pushReplacementNamed(AppRoutes.login);
+                      context
+                          .read<AuthController>()
+                          .add(AuthSignOutRequested());
+                      Navigator.of(context)
+                          .pushReplacementNamed(AppRoutes.login);
                     },
                   ),
                 ),
@@ -195,52 +201,49 @@ class ProfilePage extends StatelessWidget {
   }
 
   void _showEditProfileDialog(BuildContext context, String currentName) {
-    final nameController = TextEditingController(text: currentName);
-
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Profile'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(labelText: 'Display Name'),
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.camera_alt),
-              label: const Text('Change Photo'),
-              onPressed: () async {
-                final picker = ImagePicker();
-                await picker.pickImage(source: ImageSource.gallery);
-                // Handle photo upload
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final authState = context.read<AuthController>().state;
-              if (authState is AuthAuthenticated) {
-                final updatedUser = authState.user.copyWith(
-                  displayName: nameController.text.trim(),
+      builder: (dialogContext) => _EditProfileDialog(
+        currentName: currentName,
+        onSave: (name, photoFile) async {
+          final authState = context.read<AuthController>().state;
+          if (authState is AuthAuthenticated) {
+            final authService = AuthService();
+
+            // Upload photo if selected
+            if (photoFile != null) {
+              try {
+                await authService.updateProfilePhoto(
+                  authState.user.id,
+                  photoFile,
                 );
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to upload photo: $e')),
+                  );
+                }
+              }
+            }
+
+            // Update name if changed
+            if (name != currentName) {
+              final updatedUser = authState.user.copyWith(
+                displayName: name,
+              );
+              if (context.mounted) {
                 context.read<AuthController>().add(
                       AuthProfileUpdateRequested(user: updatedUser),
                     );
               }
-              Navigator.of(context).pop();
-            },
-            child: const Text('Save'),
-          ),
-        ],
+            }
+
+            // Refresh user profile to get updated photo
+            if (context.mounted) {
+              context.read<AuthController>().add(AuthCheckRequested());
+            }
+          }
+        },
       ),
     );
   }
@@ -299,7 +302,8 @@ class ProfilePage extends StatelessWidget {
                 if (context.mounted) {
                   Navigator.of(context).pop();
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Password changed successfully')),
+                    const SnackBar(
+                        content: Text('Password changed successfully')),
                   );
                 }
               } catch (e) {
@@ -367,6 +371,155 @@ class ProfilePage extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Dialog widget for editing profile with photo selection
+class _EditProfileDialog extends StatefulWidget {
+  final String currentName;
+  final Future<void> Function(String name, File? photoFile) onSave;
+
+  const _EditProfileDialog({
+    required this.currentName,
+    required this.onSave,
+  });
+
+  @override
+  State<_EditProfileDialog> createState() => _EditProfileDialogState();
+}
+
+class _EditProfileDialogState extends State<_EditProfileDialog> {
+  late TextEditingController _nameController;
+  File? _selectedPhoto;
+  bool _isLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.currentName);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 512,
+      maxHeight: 512,
+      imageQuality: 80,
+    );
+
+    if (pickedFile != null) {
+      setState(() {
+        _selectedPhoto = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<void> _save() async {
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      await widget.onSave(_nameController.text.trim(), _selectedPhoto);
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profile updated successfully')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Edit Profile'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Photo preview
+          GestureDetector(
+            onTap: _pickImage,
+            child: CircleAvatar(
+              radius: 50,
+              backgroundColor: Theme.of(context).primaryColor.withOpacity(0.1),
+              backgroundImage:
+                  _selectedPhoto != null ? FileImage(_selectedPhoto!) : null,
+              child: _selectedPhoto == null
+                  ? Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.camera_alt,
+                          size: 32,
+                          color: Theme.of(context).primaryColor,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Tap to select',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Theme.of(context).primaryColor,
+                          ),
+                        ),
+                      ],
+                    )
+                  : null,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_selectedPhoto != null)
+            TextButton(
+              onPressed: () {
+                setState(() {
+                  _selectedPhoto = null;
+                });
+              },
+              child: const Text('Remove photo'),
+            ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(labelText: 'Display Name'),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _isLoading ? null : _save,
+          child: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Save'),
+        ),
+      ],
     );
   }
 }

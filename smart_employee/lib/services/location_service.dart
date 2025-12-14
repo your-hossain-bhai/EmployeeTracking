@@ -6,12 +6,10 @@
 // - Location permission handling
 // - Distance calculations for geofence checks
 // - Integration with geolocator package
-// NOTE: Replaced Google Maps dependencies with flutter_map + MapTiler
 
 import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart'; // Replaced Google Maps LatLng
 
 import 'native_channel_service.dart';
 import '../models/location_model.dart';

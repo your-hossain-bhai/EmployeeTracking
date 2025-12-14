@@ -112,6 +112,11 @@ This manifest declares:
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="high_importance_channel"/>
 
+        <!-- Google Maps API Key -->
+        <meta-data
+            android:name="com.google.android.geo.API_KEY"
+            android:value="AIzaSyCJz2HS313Wblnx4mtIgqPoLHsYdQ-y8IE"/>
+
         <!-- Flutter plugin registrant -->
         <meta-data
             android:name="flutterEmbedding"

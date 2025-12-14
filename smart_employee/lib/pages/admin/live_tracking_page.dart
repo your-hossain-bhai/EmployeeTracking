@@ -1,16 +1,10 @@
 // live_tracking_page.dart
-// Live Tracking Page
-//
-// This page displays real-time locations of all employees
-// on a MapTiler map using flutter_map. Admin can view employee positions,
-// geofence boundaries, and employee status.
-// NOTE: Replaced Google Maps with flutter_map + MapTiler
+// Live Tracking Page - Google Maps Version
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:flutter_map/flutter_map.dart'; // Replaced google_maps_flutter
-import 'package:latlong2/latlong.dart'; // Replaced google_maps_flutter LatLng
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../controllers/auth_controller.dart';
 import '../../controllers/geofence_controller.dart';
@@ -18,21 +12,17 @@ import '../../services/location_service.dart';
 import '../../models/geofence_model.dart';
 import '../../widgets/employee_marker_info.dart';
 
-/// MapTiler style options - Enhanced feature for multiple map styles
+/// Google Maps style options
 enum MapStyle {
-  streets('Streets', 'streets-v2'),
-  satellite('Satellite', 'hybrid'),
-  pastel('Pastel', 'pastel'),
-  basic('Basic', 'basic-v2'),
-  outdoor('Outdoor', 'outdoor-v2');
+  normal('Normal', MapType.normal),
+  satellite('Satellite', MapType.satellite),
+  terrain('Terrain', MapType.terrain),
+  hybrid('Hybrid', MapType.hybrid);
 
   final String label;
-  final String tileStyle;
+  final MapType mapType;
 
-  const MapStyle(this.label, this.tileStyle);
-
-  String getUrl(String apiKey) =>
-      'https://api.maptiler.com/maps/$tileStyle/{z}/{x}/{y}.png?key=$apiKey';
+  const MapStyle(this.label, this.mapType);
 }
 
 /// Live tracking page for admin
@@ -44,26 +34,18 @@ class LiveTrackingPage extends StatefulWidget {
 }
 
 class _LiveTrackingPageState extends State<LiveTrackingPage> {
-  // Replaced GoogleMapController with MapController from flutter_map
-  final MapController _mapController = MapController();
+  GoogleMapController? _mapController;
   StreamSubscription<List<EmployeeLocation>>? _locationSubscription;
 
-  List<Marker> _markers = []; // Replaced Set<Marker> with List<Marker>
-  List<CircleMarker> _circles =
-      []; // Replaced Set<Circle> with List<CircleMarker>
+  Set<Marker> _markers = {};
+  Set<Circle> _circles = {};
   List<EmployeeLocation> _employeeLocations = [];
   EmployeeLocation? _selectedEmployee;
 
-  // MapTiler style options - Enhanced feature
-  MapStyle _currentMapStyle = MapStyle.streets;
+  MapStyle _currentMapStyle = MapStyle.normal;
 
-  // Replaced LatLng with latlong2 LatLng
-  static const LatLng _defaultCenter = LatLng(
-    37.7749,
-    -122.4194,
-  ); // San Francisco
-  static const String _mapTilerApiKey =
-      'a5fFxhWpyDQZZrUYF2ss'; // MapTiler API Key
+  // Default center (Bangladesh - IIUC area)
+  static const LatLng _defaultCenter = LatLng(22.4994, 91.7773);
 
   @override
   void initState() {
@@ -74,7 +56,7 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
   @override
   void dispose() {
     _locationSubscription?.cancel();
-    _mapController.dispose(); // Fixed: Removed unnecessary null-aware operator
+    _mapController?.dispose();
     super.dispose();
   }
 
@@ -84,12 +66,10 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
 
     final companyId = authState.user.companyId;
 
-    // Load geofences
     context.read<GeofenceController>().add(
           GeofenceLoadAll(companyId: companyId),
         );
 
-    // Subscribe to employee locations
     final locationService = context.read<LocationService>();
     _locationSubscription =
         locationService.streamAllEmployeeLocations(companyId).listen(
@@ -115,27 +95,27 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
 
       for (final empLoc in locations) {
         if (empLoc.hasLocation) {
-          // Replaced Google Maps Marker with flutter_map Marker
           _markers.add(
             Marker(
-              point: LatLng(
+              markerId: MarkerId(empLoc.employee.id),
+              position: LatLng(
                 empLoc.location!.latitude,
                 empLoc.location!.longitude,
               ),
-              width: 40,
-              height: 40,
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    _selectedEmployee = empLoc;
-                  });
-                },
-                child: Icon(
-                  Icons.location_on,
-                  size: 40,
-                  color: empLoc.isOnline ? Colors.green : Colors.orange,
-                ),
+              infoWindow: InfoWindow(
+                title: empLoc.employee.displayName,
+                snippet: empLoc.isOnline ? 'Online' : 'Offline',
               ),
+              icon: BitmapDescriptor.defaultMarkerWithHue(
+                empLoc.isOnline
+                    ? BitmapDescriptor.hueGreen
+                    : BitmapDescriptor.hueOrange,
+              ),
+              onTap: () {
+                setState(() {
+                  _selectedEmployee = empLoc;
+                });
+              },
             ),
           );
         }
@@ -147,39 +127,39 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
     setState(() {
       _circles.clear();
       for (final geofence in geofences) {
-        // Replaced Google Maps Circle with flutter_map CircleMarker
         _circles.add(
-          CircleMarker(
-            point: LatLng(geofence.latitude, geofence.longitude),
+          Circle(
+            circleId: CircleId(geofence.id),
+            center: LatLng(geofence.latitude, geofence.longitude),
             radius: geofence.radius,
-            color: Colors.blue.withOpacity(0.1),
-            borderColor: Colors.blue,
-            borderStrokeWidth: 2,
-            useRadiusInMeter: true, // Important: use radius in meters
+            fillColor: Colors.blue.withOpacity(0.1),
+            strokeColor: Colors.blue,
+            strokeWidth: 2,
           ),
         );
       }
     });
   }
 
-  // Replaced CameraUpdate logic with MapController methods
   void _fitMapToBounds() {
-    if (_markers.isEmpty) return;
+    if (_markers.isEmpty || _mapController == null) return;
 
     double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
     for (final marker in _markers) {
-      final pos = marker.point;
+      final pos = marker.position;
       if (pos.latitude < minLat) minLat = pos.latitude;
       if (pos.latitude > maxLat) maxLat = pos.latitude;
       if (pos.longitude < minLng) minLng = pos.longitude;
       if (pos.longitude > maxLng) maxLng = pos.longitude;
     }
 
-    final bounds = LatLngBounds(LatLng(minLat, minLng), LatLng(maxLat, maxLng));
+    final bounds = LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
 
-    // Replaced CameraUpdate with MapController.fitCamera
-    _mapController.fitCamera(
-      CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)),
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngBounds(bounds, 50),
     );
   }
 
@@ -194,7 +174,6 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
             icon: const Icon(Icons.fit_screen),
             onPressed: _fitMapToBounds,
           ),
-          // Enhanced: Map style selector
           PopupMenuButton<MapStyle>(
             icon: const Icon(Icons.layers),
             tooltip: 'Map Style',
@@ -229,32 +208,22 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
         },
         child: Stack(
           children: [
-            // Replaced GoogleMap with flutter_map FlutterMap + MapTiler
-            FlutterMap(
-              mapController: _mapController,
-              options: MapOptions(
-                // Replaced initialCameraPosition with center and zoom
-                initialCenter: _defaultCenter,
-                initialZoom: 12,
-                minZoom: 3,
-                maxZoom: 18,
+            GoogleMap(
+              initialCameraPosition: const CameraPosition(
+                target: _defaultCenter,
+                zoom: 12,
               ),
-              children: [
-                // MapTiler tile layer - replaces Google Maps tiles
-                // Enhanced: Dynamic map style switching
-                TileLayer(
-                  urlTemplate: _currentMapStyle.getUrl(_mapTilerApiKey),
-                  userAgentPackageName: 'com.example.smart_employee',
-                  maxZoom: 19,
-                ),
-                // Circle layer for geofences
-                CircleLayer(circles: _circles),
-                // Marker layer for employees
-                MarkerLayer(markers: _markers),
-              ],
+              mapType: _currentMapStyle.mapType,
+              markers: _markers,
+              circles: _circles,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
+              onMapCreated: (controller) {
+                _mapController = controller;
+              },
             ),
-
-            // Employee List Panel
             Positioned(
               top: 16,
               left: 16,
@@ -291,7 +260,7 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
                         const Padding(
                           padding: EdgeInsets.all(16),
                           child: Text(
-                            'No employees found.\nMake sure employees are registered with your company.',
+                            'No employees found.\nMake sure employees are registered.',
                             textAlign: TextAlign.center,
                             style: TextStyle(fontSize: 12, color: Colors.grey),
                           ),
@@ -310,11 +279,8 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
                                   backgroundColor: empLoc.isOnline
                                       ? Colors.green
                                       : Colors.orange,
-                                  child: const Icon(
-                                    Icons.person,
-                                    size: 14,
-                                    color: Colors.white,
-                                  ),
+                                  child: const Icon(Icons.person,
+                                      size: 14, color: Colors.white),
                                 ),
                                 title: Text(
                                   empLoc.employee.displayName,
@@ -323,7 +289,7 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
                                 subtitle: Text(
                                   empLoc.hasLocation
                                       ? (empLoc.isOnline ? 'Online' : 'Offline')
-                                      : 'No location data',
+                                      : 'No location',
                                   style: TextStyle(
                                     fontSize: 10,
                                     color:
@@ -332,25 +298,24 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
                                 ),
                                 onTap: () {
                                   if (empLoc.hasLocation) {
-                                    // Move map to employee location
-                                    _mapController.move(
-                                      LatLng(
-                                        empLoc.location!.latitude,
-                                        empLoc.location!.longitude,
+                                    _mapController?.animateCamera(
+                                      CameraUpdate.newLatLngZoom(
+                                        LatLng(
+                                          empLoc.location!.latitude,
+                                          empLoc.location!.longitude,
+                                        ),
+                                        15,
                                       ),
-                                      15,
                                     );
                                     setState(() {
                                       _selectedEmployee = empLoc;
                                     });
                                   } else {
-                                    // Show message if no location
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
-                                          '${empLoc.employee.displayName} has no location data yet.\nThey need to open the app and share their location.',
+                                          '${empLoc.employee.displayName} has no location data.',
                                         ),
-                                        duration: const Duration(seconds: 3),
                                       ),
                                     );
                                   }
@@ -364,8 +329,6 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
                 ),
               ),
             ),
-
-            // Selected Employee Info
             if (_selectedEmployee != null)
               Positioned(
                 bottom: 16,
@@ -373,15 +336,9 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
                 right: 16,
                 child: EmployeeMarkerInfo(
                   employeeLocation: _selectedEmployee!,
-                  onClose: () {
-                    setState(() {
-                      _selectedEmployee = null;
-                    });
-                  },
+                  onClose: () => setState(() => _selectedEmployee = null),
                 ),
               ),
-
-            // Legend
             Positioned(
               bottom: _selectedEmployee != null ? 140 : 16,
               right: 16,
@@ -400,6 +357,26 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
                     ],
                   ),
                 ),
+              ),
+            ),
+            Positioned(
+              bottom: _selectedEmployee != null ? 140 : 16,
+              left: 16,
+              child: FloatingActionButton.small(
+                heroTag: 'myLocation',
+                onPressed: () async {
+                  final locationService = context.read<LocationService>();
+                  final position = await locationService.getCurrentLocation();
+                  if (position != null && _mapController != null) {
+                    _mapController!.animateCamera(
+                      CameraUpdate.newLatLngZoom(
+                        LatLng(position.latitude, position.longitude),
+                        15,
+                      ),
+                    );
+                  }
+                },
+                child: const Icon(Icons.my_location),
               ),
             ),
           ],
