@@ -1,6 +1,6 @@
 // employee_dashboard_page.dart
 // Employee Dashboard Page
-// 
+//
 // This page provides an overview for employees including:
 // - Today's attendance status
 // - Quick check-in/check-out
@@ -14,6 +14,12 @@ import '../../controllers/attendance_controller.dart';
 import '../../controllers/location_controller.dart';
 import '../../routes.dart';
 import '../../utils/extensions.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/ui/primary_action_button.dart';
+import '../../widgets/ui/quick_action_tile.dart';
+import '../../widgets/ui/stat_chip.dart';
+import '../../services/streak_service.dart';
+import 'check_in_bottom_sheet.dart';
 
 /// Employee dashboard page
 class EmployeeDashboardPage extends StatefulWidget {
@@ -24,10 +30,16 @@ class EmployeeDashboardPage extends StatefulWidget {
 }
 
 class _EmployeeDashboardPageState extends State<EmployeeDashboardPage> {
+  final _streakService = StreakService();
+  int _currentStreak = 0;
+  String? _currentBadge;
+  String? _currentAttendanceId;
+
   @override
   void initState() {
     super.initState();
     _loadTodayAttendance();
+    _loadStreakData();
   }
 
   void _loadTodayAttendance() {
@@ -39,22 +51,42 @@ class _EmployeeDashboardPageState extends State<EmployeeDashboardPage> {
     }
   }
 
+  Future<void> _loadStreakData() async {
+    final authState = context.read<AuthController>().state;
+    if (authState is AuthAuthenticated) {
+      final streak = await _streakService.calculateCurrentStreak(
+        employeeId: authState.user.id,
+        companyId: authState.user.companyId!,
+      );
+      final badge = await _streakService.getCurrentBadge(
+        employeeId: authState.user.id,
+        companyId: authState.user.companyId!,
+      );
+      if (mounted) {
+        setState(() {
+          _currentStreak = streak;
+          _currentBadge = badge;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Dashboard'),
+        title: const Text(''),
+        backgroundColor: Colors.transparent,
         actions: [
           IconButton(
-            icon: const Icon(Icons.person),
-            onPressed: () {
-              Navigator.of(context).pushNamed(AppRoutes.profile);
-            },
+            icon: const Icon(Icons.person_outline),
+            onPressed: () => Navigator.of(context).pushNamed(AppRoutes.profile),
           ),
           IconButton(
             icon: const Icon(Icons.logout),
             onPressed: () {
-              // Stop location tracking before logout
               context.read<LocationController>().add(LocationStopTracking());
               context.read<AuthController>().add(AuthSignOutRequested());
               Navigator.of(context).pushReplacementNamed(AppRoutes.login);
@@ -65,81 +97,154 @@ class _EmployeeDashboardPageState extends State<EmployeeDashboardPage> {
       body: RefreshIndicator(
         onRefresh: () async {
           _loadTodayAttendance();
+          await _loadStreakData();
         },
-        child: SingleChildScrollView(
+        child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Welcome Section
-              BlocBuilder<AuthController, AuthState>(
-                builder: (context, state) {
-                  String name = 'Employee';
-                  if (state is AuthAuthenticated) {
-                    name = state.user.displayName;
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Welcome, $name',
-                        style: Theme.of(context).textTheme.headlineSmall,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        DateTime.now().toDateString(),
-                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.grey,
+          slivers: [
+            SliverToBoxAdapter(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 64, 16, 24),
+                decoration:
+                    const BoxDecoration(gradient: AppTheme.headerGradient),
+                child: BlocBuilder<AuthController, AuthState>(
+                  builder: (context, state) {
+                    final name = (state is AuthAuthenticated)
+                        ? state.user.displayName
+                        : 'Employee';
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Good Day,',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(color: Colors.white70)),
+                        const SizedBox(height: 6),
+                        Text(name,
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineSmall
+                                ?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            StatChip(
+                              icon: Icons.calendar_today,
+                              label: DateTime.now().toDateString(),
+                              color: Colors.white,
                             ),
+                            BlocBuilder<AttendanceController, AttendanceState>(
+                              builder: (context, st) {
+                                var label = 'Not checked in';
+                                var color = Colors.white;
+                                if (st is AttendanceTodayLoaded &&
+                                    st.attendance != null) {
+                                  if (st.attendance!.checkOutTime != null) {
+                                    label = 'Checked out';
+                                  } else if (st.attendance!.checkInTime !=
+                                      null) {
+                                    label = 'Checked in';
+                                  }
+                                }
+                                if (st is AttendanceCheckedIn)
+                                  label = 'Checked in';
+                                if (st is AttendanceCheckedOut)
+                                  label = 'Checked out';
+                                return StatChip(
+                                    icon: Icons.verified,
+                                    label: label,
+                                    color: color);
+                              },
+                            ),
+                            if (_currentStreak > 0)
+                              StatChip(
+                                icon: Icons.local_fire_department,
+                                label:
+                                    '$_currentStreak day${_currentStreak > 1 ? 's' : ''} streak',
+                                color: Colors.amber,
+                              ),
+                            if (_currentBadge != null)
+                              StatChip(
+                                icon: Icons.emoji_events,
+                                label: _currentBadge!,
+                                color: Colors.greenAccent,
+                              ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+
+            // Main content
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildHeroCheckButton(context),
+                    const SizedBox(height: 20),
+                    _buildLocationTrackingCard(),
+                    const SizedBox(height: 24),
+                    Text('Quick Actions',
+                        style: Theme.of(context).textTheme.titleLarge),
+                    const SizedBox(height: 12),
+                    GridView(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: 1.25,
                       ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-
-              // Attendance Status Card
-              _buildAttendanceStatusCard(),
-              const SizedBox(height: 24),
-
-              // Location Tracking Status
-              _buildLocationTrackingCard(),
-              const SizedBox(height: 24),
-
-              // Quick Actions
-              Text(
-                'Quick Actions',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildActionCard(
-                      icon: Icons.assignment,
-                      title: 'My Attendance',
-                      subtitle: 'View history',
-                      onTap: () {
-                        Navigator.of(context).pushNamed(AppRoutes.myAttendance);
-                      },
+                      children: [
+                        QuickActionTile(
+                          icon: Icons.assignment_turned_in,
+                          title: 'My Attendance',
+                          subtitle: 'History & details',
+                          onTap: () => Navigator.of(context)
+                              .pushNamed(AppRoutes.myAttendance),
+                        ),
+                        QuickActionTile(
+                          icon: Icons.event_note,
+                          title: 'Submit Leave',
+                          subtitle: 'Request time off',
+                          onTap: () => Navigator.of(context)
+                              .pushNamed(AppRoutes.employeeLeaveRequest),
+                        ),
+                        QuickActionTile(
+                          icon: Icons.wallet_giftcard,
+                          title: 'Leave Balance',
+                          subtitle: 'Year to date',
+                          onTap: () => Navigator.of(context)
+                              .pushNamed(AppRoutes.employeeLeaveBalance),
+                        ),
+                        QuickActionTile(
+                          icon: Icons.celebration,
+                          title: 'Holidays',
+                          subtitle: 'Upcoming days',
+                          onTap: () => Navigator.of(context)
+                              .pushNamed(AppRoutes.employeeHolidays),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: _buildActionCard(
-                      icon: Icons.qr_code_scanner,
-                      title: 'Check In',
-                      subtitle: 'Manual check-in',
-                      onTap: () {
-                        Navigator.of(context).pushNamed(AppRoutes.checkIn);
-                      },
-                    ),
-                  ),
-                ],
+                    const SizedBox(height: 24),
+                  ],
+                ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -156,10 +261,11 @@ class _EmployeeDashboardPageState extends State<EmployeeDashboardPage> {
 
         if (state is AttendanceTodayLoaded && state.attendance != null) {
           final attendance = state.attendance!;
+          _currentAttendanceId = attendance.id;
           isCheckedIn = attendance.isCheckedIn;
           checkInTime = attendance.checkInTime?.toTimeString();
           checkOutTime = attendance.checkOutTime?.toTimeString();
-          
+
           if (attendance.checkOutTime != null) {
             statusText = 'Checked out';
             statusColor = Colors.blue;
@@ -273,6 +379,43 @@ class _EmployeeDashboardPageState extends State<EmployeeDashboardPage> {
                 ),
               ],
             ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildHeroCheckButton(BuildContext context) {
+    return BlocBuilder<AttendanceController, AttendanceState>(
+      builder: (context, state) {
+        bool isCheckedIn = false;
+        if (state is AttendanceTodayLoaded && state.attendance != null) {
+          isCheckedIn = state.attendance!.isCheckedIn;
+        } else if (state is AttendanceCheckedIn) {
+          isCheckedIn = true;
+        } else if (state is AttendanceCheckedOut) {
+          isCheckedIn = false;
+        }
+
+        return Center(
+          child: PrimaryActionButton(
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                backgroundColor: Colors.transparent,
+                builder: (ctx) => BlocProvider.value(
+                  value: context.read<AttendanceController>(),
+                  child: CheckInBottomSheet(
+                    isCheckOut: isCheckedIn,
+                    attendanceId: isCheckedIn ? _currentAttendanceId : null,
+                  ),
+                ),
+              );
+            },
+            label: isCheckedIn ? 'Check Out' : 'Check In',
+            icon: isCheckedIn ? Icons.logout_rounded : Icons.login_rounded,
+            danger: isCheckedIn,
           ),
         );
       },

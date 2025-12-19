@@ -1,6 +1,6 @@
 // routes.dart
 // Application routing configuration
-// 
+//
 // This file defines all named routes and the route generator
 // for navigation throughout the application.
 
@@ -8,15 +8,19 @@ import 'package:flutter/material.dart';
 
 import 'pages/auth/login_page.dart';
 import 'pages/auth/register_page.dart';
-import 'pages/admin/admin_dashboard_page.dart';
+import 'pages/root/admin_home_page.dart';
 import 'pages/admin/employee_management_page.dart';
 import 'pages/admin/live_tracking_page.dart';
 import 'pages/admin/geofence_management_page.dart';
 import 'pages/admin/attendance_reports_page.dart';
-import 'pages/employee/employee_dashboard_page.dart';
+import 'pages/admin/leave_management_page.dart';
+import 'pages/root/employee_home_page.dart';
 import 'pages/employee/my_attendance_page.dart';
 import 'pages/employee/check_in_page.dart';
 import 'pages/employee/profile_page.dart';
+import 'pages/employee/leave_request_page.dart';
+import 'pages/employee/leave_balance_page.dart';
+import 'pages/employee/holidays_page.dart';
 
 /// Route names
 class AppRoutes {
@@ -27,10 +31,14 @@ class AppRoutes {
   static const String liveTracking = '/admin/tracking';
   static const String geofenceManagement = '/admin/geofences';
   static const String attendanceReports = '/admin/attendance';
+  static const String leaveManagement = '/admin/leaves';
   static const String employeeDashboard = '/employee/dashboard';
   static const String myAttendance = '/employee/attendance';
   static const String checkIn = '/employee/checkin';
   static const String profile = '/employee/profile';
+  static const String employeeLeaveRequest = '/employee/leave/request';
+  static const String employeeLeaveBalance = '/employee/leave/balance';
+  static const String employeeHolidays = '/employee/holidays';
 }
 
 /// Route generator
@@ -45,7 +53,7 @@ class AppRouter {
 
       // Admin routes
       case AppRoutes.adminDashboard:
-        return _buildRoute(const AdminDashboardPage(), settings);
+        return _buildRoute(const AdminHomePage(), settings);
       case AppRoutes.employeeManagement:
         return _buildRoute(const EmployeeManagementPage(), settings);
       case AppRoutes.liveTracking:
@@ -54,16 +62,24 @@ class AppRouter {
         return _buildRoute(const GeofenceManagementPage(), settings);
       case AppRoutes.attendanceReports:
         return _buildRoute(const AttendanceReportsPage(), settings);
+      case AppRoutes.leaveManagement:
+        return _buildRoute(const LeaveManagementPage(), settings);
 
       // Employee routes
       case AppRoutes.employeeDashboard:
-        return _buildRoute(const EmployeeDashboardPage(), settings);
+        return _buildRoute(const EmployeeHomePage(), settings);
       case AppRoutes.myAttendance:
         return _buildRoute(const MyAttendancePage(), settings);
       case AppRoutes.checkIn:
         return _buildRoute(const CheckInPage(), settings);
       case AppRoutes.profile:
         return _buildRoute(const ProfilePage(), settings);
+      case AppRoutes.employeeLeaveRequest:
+        return _buildRoute(const LeaveRequestPage(), settings);
+      case AppRoutes.employeeLeaveBalance:
+        return _buildRoute(const LeaveBalancePage(), settings);
+      case AppRoutes.employeeHolidays:
+        return _buildRoute(const HolidaysPage(), settings);
 
       // Default route
       default:

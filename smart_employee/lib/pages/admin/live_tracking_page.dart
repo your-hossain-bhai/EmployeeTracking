@@ -1,28 +1,30 @@
 // live_tracking_page.dart
-// Live Tracking Page - Google Maps Version
+// Live Tracking Page - MapTiler (flutter_map)
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../controllers/auth_controller.dart';
 import '../../controllers/geofence_controller.dart';
-import '../../services/location_service.dart';
 import '../../models/geofence_model.dart';
+import '../../services/location_service.dart';
+import '../../utils/constants.dart';
 import '../../widgets/employee_marker_info.dart';
 
-/// Google Maps style options
+/// Map styles backed by MapTiler
 enum MapStyle {
-  normal('Normal', MapType.normal),
-  satellite('Satellite', MapType.satellite),
-  terrain('Terrain', MapType.terrain),
-  hybrid('Hybrid', MapType.hybrid);
+  streets('Streets', AppConstants.mapTilerStreetsUrl),
+  satellite('Satellite', AppConstants.mapTilerSatelliteUrl),
+  terrain('Terrain', AppConstants.mapTilerTerrainUrl),
+  hybrid('Hybrid', AppConstants.mapTilerHybridUrl);
 
   final String label;
-  final MapType mapType;
+  final String tileUrl;
 
-  const MapStyle(this.label, this.mapType);
+  const MapStyle(this.label, this.tileUrl);
 }
 
 /// Live tracking page for admin
@@ -34,18 +36,18 @@ class LiveTrackingPage extends StatefulWidget {
 }
 
 class _LiveTrackingPageState extends State<LiveTrackingPage> {
-  GoogleMapController? _mapController;
+  final MapController _mapController = MapController();
   StreamSubscription<List<EmployeeLocation>>? _locationSubscription;
 
-  Set<Marker> _markers = {};
-  Set<Circle> _circles = {};
+  List<Marker> _markers = [];
+  List<CircleMarker> _circles = [];
   List<EmployeeLocation> _employeeLocations = [];
   EmployeeLocation? _selectedEmployee;
 
-  MapStyle _currentMapStyle = MapStyle.normal;
+  MapStyle _currentMapStyle = MapStyle.streets;
 
   // Default center (Bangladesh - IIUC area)
-  static const LatLng _defaultCenter = LatLng(22.4994, 91.7773);
+  static final LatLng _defaultCenter = LatLng(22.4994, 91.7773);
 
   @override
   void initState() {
@@ -56,7 +58,6 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
   @override
   void dispose() {
     _locationSubscription?.cancel();
-    _mapController?.dispose();
     super.dispose();
   }
 
@@ -75,7 +76,7 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
         locationService.streamAllEmployeeLocations(companyId).listen(
       _updateEmployeeMarkers,
       onError: (error) {
-        print('Error streaming employee locations: $error');
+        // Avoid crashing UI on stream errors
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -91,75 +92,83 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
   void _updateEmployeeMarkers(List<EmployeeLocation> locations) {
     setState(() {
       _employeeLocations = locations;
-      _markers.clear();
-
-      for (final empLoc in locations) {
-        if (empLoc.hasLocation) {
-          _markers.add(
-            Marker(
-              markerId: MarkerId(empLoc.employee.id),
-              position: LatLng(
-                empLoc.location!.latitude,
-                empLoc.location!.longitude,
-              ),
-              infoWindow: InfoWindow(
-                title: empLoc.employee.displayName,
-                snippet: empLoc.isOnline ? 'Online' : 'Offline',
-              ),
-              icon: BitmapDescriptor.defaultMarkerWithHue(
-                empLoc.isOnline
-                    ? BitmapDescriptor.hueGreen
-                    : BitmapDescriptor.hueOrange,
-              ),
-              onTap: () {
-                setState(() {
-                  _selectedEmployee = empLoc;
-                });
-              },
+      _markers = locations.where((empLoc) => empLoc.hasLocation).map((empLoc) {
+        final loc = empLoc.location!;
+        final isOnline = empLoc.isOnline;
+        return Marker(
+          point: LatLng(loc.latitude, loc.longitude),
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          child: GestureDetector(
+            onTap: () => setState(() => _selectedEmployee = empLoc),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.6),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    empLoc.employee.displayName,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Container(
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: isOnline ? Colors.green : Colors.orange,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                ),
+              ],
             ),
-          );
-        }
-      }
+          ),
+        );
+      }).toList();
     });
   }
 
   void _updateGeofenceCircles(List<GeofenceModel> geofences) {
     setState(() {
-      _circles.clear();
-      for (final geofence in geofences) {
-        _circles.add(
-          Circle(
-            circleId: CircleId(geofence.id),
-            center: LatLng(geofence.latitude, geofence.longitude),
-            radius: geofence.radius,
-            fillColor: Colors.blue.withOpacity(0.1),
-            strokeColor: Colors.blue,
-            strokeWidth: 2,
-          ),
-        );
-      }
+      _circles = geofences
+          .map(
+            (geofence) => CircleMarker(
+              point: LatLng(geofence.latitude, geofence.longitude),
+              radius: geofence.radius,
+              useRadiusInMeter: true,
+              color: Colors.blue.withOpacity(0.1),
+              borderColor: Colors.blue,
+              borderStrokeWidth: 2,
+            ),
+          )
+          .toList();
     });
   }
 
   void _fitMapToBounds() {
-    if (_markers.isEmpty || _mapController == null) return;
+    if (_markers.isEmpty) return;
 
-    double minLat = 90, maxLat = -90, minLng = 180, maxLng = -180;
-    for (final marker in _markers) {
-      final pos = marker.position;
-      if (pos.latitude < minLat) minLat = pos.latitude;
-      if (pos.latitude > maxLat) maxLat = pos.latitude;
-      if (pos.longitude < minLng) minLng = pos.longitude;
-      if (pos.longitude > maxLng) maxLng = pos.longitude;
+    final bounds = LatLngBounds(_markers.first.point, _markers.first.point);
+    for (final marker in _markers.skip(1)) {
+      bounds.extend(marker.point);
     }
 
-    final bounds = LatLngBounds(
-      southwest: LatLng(minLat, minLng),
-      northeast: LatLng(maxLat, maxLng),
-    );
-
-    _mapController!.animateCamera(
-      CameraUpdate.newLatLngBounds(bounds, 50),
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: bounds,
+        padding: const EdgeInsets.all(50),
+      ),
     );
   }
 
@@ -208,30 +217,42 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
         },
         child: Stack(
           children: [
-            GoogleMap(
-              initialCameraPosition: const CameraPosition(
-                target: _defaultCenter,
-                zoom: 12,
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _defaultCenter,
+                initialZoom: 12,
+                minZoom: AppConstants.minMapZoom,
+                maxZoom: AppConstants.maxMapZoom,
               ),
-              mapType: _currentMapStyle.mapType,
-              markers: _markers,
-              circles: _circles,
-              myLocationEnabled: true,
-              myLocationButtonEnabled: false,
-              zoomControlsEnabled: false,
-              mapToolbarEnabled: false,
-              onMapCreated: (controller) {
-                _mapController = controller;
-              },
+              children: [
+                TileLayer(
+                  urlTemplate: _currentMapStyle.tileUrl,
+                  userAgentPackageName: AppConstants.mapTilerUserAgent,
+                  minZoom: AppConstants.minMapZoom,
+                  maxZoom: AppConstants.maxMapZoom,
+                  retinaMode: false,
+                ),
+                CircleLayer(circles: _circles),
+                MarkerLayer(markers: _markers),
+                const RichAttributionWidget(
+                  attributions: [
+                    TextSourceAttribution(
+                      '© MapTiler © OpenStreetMap contributors',
+                      prependCopyright: true,
+                    ),
+                  ],
+                ),
+              ],
             ),
             Positioned(
               top: 16,
               left: 16,
               child: Card(
                 child: Container(
-                  width: 200,
+                  width: 220,
                   constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.4,
+                    maxHeight: MediaQuery.of(context).size.height * 0.45,
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -298,14 +319,10 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
                                 ),
                                 onTap: () {
                                   if (empLoc.hasLocation) {
-                                    _mapController?.animateCamera(
-                                      CameraUpdate.newLatLngZoom(
-                                        LatLng(
-                                          empLoc.location!.latitude,
-                                          empLoc.location!.longitude,
-                                        ),
-                                        15,
-                                      ),
+                                    final loc = empLoc.location!;
+                                    _mapController.move(
+                                      LatLng(loc.latitude, loc.longitude),
+                                      15,
                                     );
                                     setState(() {
                                       _selectedEmployee = empLoc;
@@ -367,12 +384,10 @@ class _LiveTrackingPageState extends State<LiveTrackingPage> {
                 onPressed: () async {
                   final locationService = context.read<LocationService>();
                   final position = await locationService.getCurrentLocation();
-                  if (position != null && _mapController != null) {
-                    _mapController!.animateCamera(
-                      CameraUpdate.newLatLngZoom(
-                        LatLng(position.latitude, position.longitude),
-                        15,
-                      ),
+                  if (position != null) {
+                    _mapController.move(
+                      LatLng(position.latitude, position.longitude),
+                      15,
                     );
                   }
                 },

@@ -84,7 +84,7 @@ class LocationService {
       // Filter employees client-side to avoid needing composite indexes
       final employees = snapshot.docs
           .map((doc) => UserModel.fromFirestore(doc))
-          .where((user) => user.role == 'employee' && user.isActive)
+          .where((user) => user.role == UserRole.employee && user.isActive)
           .toList();
 
       print(

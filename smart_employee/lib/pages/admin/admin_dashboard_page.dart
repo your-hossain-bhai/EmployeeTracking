@@ -62,20 +62,33 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       final todayStart = DateTime(now.year, now.month, now.day);
       final todayEnd = todayStart.add(const Duration(days: 1));
 
-      // Get today's attendance
-      final attendanceQuery = _firestore
-          .collection('attendance')
-          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(todayStart))
-          .where('date', isLessThan: Timestamp.fromDate(todayEnd));
+      // Get today's attendance - simplified query to avoid index
+      // Filter by companyId if available to reduce data
+      Query attendanceQuery = _firestore.collection('attendance');
+      if (companyId != null) {
+        attendanceQuery =
+            attendanceQuery.where('companyId', isEqualTo: companyId);
+      }
 
       final attendanceSnapshot = await attendanceQuery.get();
+
+      // Filter by date client-side to avoid composite index
+      final todayStartTimestamp = Timestamp.fromDate(todayStart);
+      final todayEndTimestamp = Timestamp.fromDate(todayEnd);
 
       // Count unique employees who checked in today
       final checkedInEmployees = <String>{};
       for (final doc in attendanceSnapshot.docs) {
-        final employeeId = doc.data()['employeeId'] as String?;
-        if (employeeId != null) {
-          checkedInEmployees.add(employeeId);
+        final data = doc.data() as Map<String, dynamic>;
+        final date = data['date'] as Timestamp?;
+        final employeeId = data['employeeId'] as String?;
+
+        if (date != null && employeeId != null) {
+          // Check if date is today
+          if (date.compareTo(todayStartTimestamp) >= 0 &&
+              date.compareTo(todayEndTimestamp) < 0) {
+            checkedInEmployees.add(employeeId);
+          }
         }
       }
       _presentToday = checkedInEmployees.length;
@@ -97,8 +110,10 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
-        title: const Text('Admin Dashboard'),
+        backgroundColor: Colors.transparent,
+        title: const Text(''),
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
@@ -111,139 +126,187 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
       ),
       body: RefreshIndicator(
         onRefresh: _loadStatistics,
-        child: SingleChildScrollView(
+        child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Welcome Section
-              BlocBuilder<AuthController, AuthState>(
-                builder: (context, state) {
-                  String name = 'Admin';
-                  if (state is AuthAuthenticated) {
-                    name = state.user.displayName;
-                  }
-                  return Text(
-                    'Welcome, $name',
-                    style: Theme.of(context).textTheme.headlineSmall,
-                  );
-                },
+          slivers: [
+            SliverToBoxAdapter(
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(16, 64, 16, 24),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF3D5AFE), Color(0xFF00BCD4)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: BlocBuilder<AuthController, AuthState>(
+                  builder: (context, state) {
+                    String name = 'Admin';
+                    if (state is AuthAuthenticated) {
+                      name = state.user.displayName;
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Good Morning,',
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(color: Colors.white70)),
+                        const SizedBox(height: 6),
+                        Text(name,
+                            style: Theme.of(context)
+                                .textTheme
+                                .headlineSmall
+                                ?.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Here\'s what\'s happening today',
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyMedium
+                              ?.copyWith(color: Colors.white70),
+                        ),
+                      ],
+                    );
+                  },
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Here\'s what\'s happening today',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey,
-                    ),
-              ),
-              const SizedBox(height: 24),
-
-              // Statistics Cards
-              if (_isLoading)
-                const Center(child: CircularProgressIndicator())
-              else ...[
-                Row(
+            ),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: DashboardCard(
-                        title: 'Total Employees',
-                        value: '$_totalEmployees',
-                        icon: Icons.people,
-                        color: Colors.blue,
-                        onTap: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.employeeManagement);
-                        },
+                    if (_isLoading)
+                      const Center(child: CircularProgressIndicator())
+                    else ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DashboardCard(
+                              title: 'Total Employees',
+                              value: '$_totalEmployees',
+                              icon: Icons.people,
+                              color: Colors.blue,
+                              onTap: () {
+                                Navigator.of(context)
+                                    .pushNamed(AppRoutes.employeeManagement);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: DashboardCard(
+                              title: 'Present Today',
+                              value: '$_presentToday',
+                              icon: Icons.check_circle,
+                              color: Colors.green,
+                              onTap: () {
+                                Navigator.of(context)
+                                    .pushNamed(AppRoutes.attendanceReports);
+                              },
+                            ),
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: DashboardCard(
+                              title: 'On Leave',
+                              value: '$_onLeave',
+                              icon: Icons.event_busy,
+                              color: Colors.orange,
+                              onTap: () {
+                                Navigator.of(context)
+                                    .pushNamed(AppRoutes.leaveManagement);
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: DashboardCard(
+                              title: 'Absent',
+                              value: '$_absent',
+                              icon: Icons.cancel,
+                              color: Colors.red,
+                              onTap: () {
+                                Navigator.of(context)
+                                    .pushNamed(AppRoutes.attendanceReports);
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+
+                    // Quick Actions
+                    Text(
+                      'Quick Actions',
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: DashboardCard(
-                        title: 'Present Today',
-                        value: '$_presentToday',
-                        icon: Icons.check_circle,
-                        color: Colors.green,
-                        onTap: () {
-                          Navigator.of(context)
-                              .pushNamed(AppRoutes.attendanceReports);
-                        },
-                      ),
+                    const SizedBox(height: 16),
+
+                    _buildActionTile(
+                      context,
+                      icon: Icons.location_on,
+                      title: 'Live Tracking',
+                      subtitle: 'View real-time employee locations',
+                      onTap: () {
+                        Navigator.of(context).pushNamed(AppRoutes.liveTracking);
+                      },
+                    ),
+                    _buildActionTile(
+                      context,
+                      icon: Icons.map,
+                      title: 'Geofence Management',
+                      subtitle: 'Manage office locations and geofences',
+                      onTap: () {
+                        Navigator.of(context)
+                            .pushNamed(AppRoutes.geofenceManagement);
+                      },
+                    ),
+                    _buildActionTile(
+                      context,
+                      icon: Icons.assignment,
+                      title: 'Attendance Reports',
+                      subtitle: 'View and export attendance data',
+                      onTap: () {
+                        Navigator.of(context)
+                            .pushNamed(AppRoutes.attendanceReports);
+                      },
+                    ),
+                    _buildActionTile(
+                      context,
+                      icon: Icons.event_note,
+                      title: 'Leave Management',
+                      subtitle: 'Manage employee leave requests',
+                      onTap: () {
+                        Navigator.of(context)
+                            .pushNamed(AppRoutes.leaveManagement);
+                      },
+                    ),
+                    _buildActionTile(
+                      context,
+                      icon: Icons.people,
+                      title: 'Employee Management',
+                      subtitle: 'Add, edit, or remove employees',
+                      onTap: () {
+                        Navigator.of(context)
+                            .pushNamed(AppRoutes.employeeManagement);
+                      },
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: DashboardCard(
-                        title: 'On Leave',
-                        value: '$_onLeave',
-                        icon: Icons.event_busy,
-                        color: Colors.orange,
-                        onTap: () {},
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: DashboardCard(
-                        title: 'Absent',
-                        value: '$_absent',
-                        icon: Icons.cancel,
-                        color: Colors.red,
-                        onTap: () {},
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-              const SizedBox(height: 32),
-
-              // Quick Actions
-              Text(
-                'Quick Actions',
-                style: Theme.of(context).textTheme.titleLarge,
               ),
-              const SizedBox(height: 16),
-
-              _buildActionTile(
-                context,
-                icon: Icons.location_on,
-                title: 'Live Tracking',
-                subtitle: 'View real-time employee locations',
-                onTap: () {
-                  Navigator.of(context).pushNamed(AppRoutes.liveTracking);
-                },
-              ),
-              _buildActionTile(
-                context,
-                icon: Icons.map,
-                title: 'Geofence Management',
-                subtitle: 'Manage office locations and geofences',
-                onTap: () {
-                  Navigator.of(context).pushNamed(AppRoutes.geofenceManagement);
-                },
-              ),
-              _buildActionTile(
-                context,
-                icon: Icons.assignment,
-                title: 'Attendance Reports',
-                subtitle: 'View and export attendance data',
-                onTap: () {
-                  Navigator.of(context).pushNamed(AppRoutes.attendanceReports);
-                },
-              ),
-              _buildActionTile(
-                context,
-                icon: Icons.people,
-                title: 'Employee Management',
-                subtitle: 'Add, edit, or remove employees',
-                onTap: () {
-                  Navigator.of(context).pushNamed(AppRoutes.employeeManagement);
-                },
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

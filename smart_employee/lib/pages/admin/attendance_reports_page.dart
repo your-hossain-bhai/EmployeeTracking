@@ -1,6 +1,6 @@
 // attendance_reports_page.dart
 // Attendance Reports Page
-// 
+//
 // This page displays attendance reports for administrators.
 // Features include daily/weekly/monthly reports, filtering,
 // and export functionality.
@@ -9,6 +9,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:csv/csv.dart' as csv_lib;
+import 'dart:io';
 
 import '../../controllers/auth_controller.dart';
 import '../../models/attendance_model.dart';
@@ -48,12 +52,7 @@ class _AttendanceReportsPageState extends State<AttendanceReportsPage> {
           ),
           IconButton(
             icon: const Icon(Icons.download),
-            onPressed: () {
-              // Export functionality
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Export feature coming soon')),
-              );
-            },
+            onPressed: () => _handleExport(context),
           ),
         ],
       ),
@@ -172,7 +171,8 @@ class _AttendanceReportsPageState extends State<AttendanceReportsPage> {
         return (start, end);
       case 'month':
         final start = DateTime(_selectedDate.year, _selectedDate.month, 1);
-        final end = DateTime(_selectedDate.year, _selectedDate.month + 1, 0, 23, 59);
+        final end =
+            DateTime(_selectedDate.year, _selectedDate.month + 1, 0, 23, 59);
         return (start, end);
       default:
         final start = DateTime(
@@ -198,23 +198,50 @@ class _AttendanceReportsPageState extends State<AttendanceReportsPage> {
           stream: FirebaseFirestore.instance
               .collection('attendance')
               .where('companyId', isEqualTo: authState.user.companyId)
-              .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-              .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
               .snapshots(),
           builder: (context, snapshot) {
             int present = 0;
             int absent = 0;
             int late = 0;
 
+            if (snapshot.hasError) {
+              // Silently handle error, show 0s
+              return Row(
+                children: [
+                  _buildSummaryCard('Present', '0', Colors.green),
+                  const SizedBox(width: 8),
+                  _buildSummaryCard('Absent', '0', Colors.red),
+                  const SizedBox(width: 8),
+                  _buildSummaryCard('Late', '0', Colors.orange),
+                ],
+              );
+            }
+
             if (snapshot.hasData) {
+              final (startDate, endDate) = _getDateRange();
+              final startTimestamp = Timestamp.fromDate(startDate);
+              final endTimestamp = Timestamp.fromDate(endDate);
+
               for (final doc in snapshot.data!.docs) {
                 final data = doc.data() as Map<String, dynamic>;
+                final date = (data['date'] as Timestamp?);
+
+                // Filter by date client-side
+                if (date == null ||
+                    date.compareTo(startTimestamp) < 0 ||
+                    date.compareTo(endTimestamp) > 0) {
+                  continue;
+                }
+
                 final status = data['status'] as String?;
                 if (status == 'checkedIn' || status == 'checkedOut') {
                   present++;
                   // Check if late (after 9:15 AM)
-                  final checkInTime = (data['checkInTime'] as Timestamp?)?.toDate();
-                  if (checkInTime != null && checkInTime.hour >= 9 && checkInTime.minute > 15) {
+                  final checkInTime =
+                      (data['checkInTime'] as Timestamp?)?.toDate();
+                  if (checkInTime != null &&
+                      checkInTime.hour >= 9 &&
+                      checkInTime.minute > 15) {
                     late++;
                   }
                 } else if (status == 'absent') {
@@ -278,31 +305,57 @@ class _AttendanceReportsPageState extends State<AttendanceReportsPage> {
           stream: FirebaseFirestore.instance
               .collection('attendance')
               .where('companyId', isEqualTo: authState.user.companyId)
-              .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
-              .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
-              .orderBy('date', descending: true)
               .snapshots(),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
+              return Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.error_outline,
+                        size: 48, color: Colors.grey),
+                    const SizedBox(height: 16),
+                    const Text('Unable to load attendance data'),
+                    const SizedBox(height: 8),
+                    ElevatedButton(
+                      onPressed: () => setState(() {}),
+                      child: const Text('Retry'),
+                    ),
+                  ],
+                ),
+              );
             }
 
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(child: CircularProgressIndicator());
             }
 
+            final (startDate, endDate) = _getDateRange();
+            final startTimestamp = Timestamp.fromDate(startDate);
+            final endTimestamp = Timestamp.fromDate(endDate);
+
             final records = snapshot.data!.docs
+                .where((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final date = (data['date'] as Timestamp?);
+                  return date != null &&
+                      date.compareTo(startTimestamp) >= 0 &&
+                      date.compareTo(endTimestamp) <= 0;
+                })
                 .map((doc) => AttendanceModel.fromFirestore(doc))
-                .toList();
+                .toList()
+              ..sort((a, b) => b.date.compareTo(a.date));
 
             if (records.isEmpty) {
               return const Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.assignment_outlined, size: 64, color: Colors.grey),
+                    Icon(Icons.assignment_outlined,
+                        size: 64, color: Colors.grey),
                     SizedBox(height: 16),
-                    Text('No attendance records', style: TextStyle(color: Colors.grey)),
+                    Text('No attendance records',
+                        style: TextStyle(color: Colors.grey)),
                   ],
                 ),
               );
@@ -424,31 +477,192 @@ class _AttendanceReportsPageState extends State<AttendanceReportsPage> {
             const SizedBox(height: 16),
             _buildDetailRow('Date', record.date.toDateString()),
             _buildDetailRow(
-              'Check-in',
-              record.checkInTime?.toTimeString() ?? 'N/A',
-            ),
+                'Check-in', record.checkInTime?.toTimeString() ?? 'N/A'),
             _buildDetailRow(
-              'Check-out',
-              record.checkOutTime?.toTimeString() ?? 'N/A',
-            ),
+                'Check-out', record.checkOutTime?.toTimeString() ?? 'N/A'),
             _buildDetailRow(
-              'Duration',
-              record.workDuration?.toHoursMinutes() ?? 'N/A',
-            ),
+                'Duration', record.workDuration?.toHoursMinutes() ?? 'N/A'),
             _buildDetailRow('Method', record.checkInMethod.name),
             _buildDetailRow(
-              'Geofence Verified',
-              record.isGeofenceVerified ? 'Yes' : 'No',
-            ),
+                'Geofence Verified', record.isGeofenceVerified ? 'Yes' : 'No'),
+            if (record.checkInLatitude != null &&
+                record.checkInLongitude != null)
+              _buildDetailRow('Check-in Location',
+                  '${record.checkInLatitude!.toStringAsFixed(6)}, ${record.checkInLongitude!.toStringAsFixed(6)}'),
+            if (record.checkOutLatitude != null &&
+                record.checkOutLongitude != null)
+              _buildDetailRow('Check-out Location',
+                  '${record.checkOutLatitude!.toStringAsFixed(6)}, ${record.checkOutLongitude!.toStringAsFixed(6)}'),
             if (record.isManuallyOverridden) ...[
               const Divider(),
               _buildDetailRow('Overridden', 'Yes'),
-              _buildDetailRow('Override Reason', record.overrideReason ?? 'N/A'),
+              _buildDetailRow(
+                  'Override Reason', record.overrideReason ?? 'N/A'),
             ],
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _handleExport(BuildContext context) async {
+    try {
+      final authState = context.read<AuthController>().state;
+      if (authState is! AuthAuthenticated) return;
+
+      final (startDate, endDate) = _getDateRange();
+      final startTimestamp = Timestamp.fromDate(startDate);
+      final endTimestamp = Timestamp.fromDate(endDate);
+
+      final snapshot = await FirebaseFirestore.instance
+          .collection('attendance')
+          .where('companyId', isEqualTo: authState.user.companyId)
+          .get();
+
+      // Filter by date client-side
+      final records = snapshot.docs
+          .where((doc) {
+            final data = doc.data();
+            final date = (data['date'] as Timestamp?);
+            return date != null &&
+                date.compareTo(startTimestamp) >= 0 &&
+                date.compareTo(endTimestamp) <= 0;
+          })
+          .map((doc) => AttendanceModel.fromFirestore(doc))
+          .toList();
+
+      if (records.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('No attendance records to export')),
+          );
+        }
+        return;
+      }
+
+      // Show export options dialog
+      if (!mounted) return;
+      final exportFormat = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Export Options'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.table_chart),
+                title: const Text('Export as CSV'),
+                subtitle: const Text('Spreadsheet format'),
+                onTap: () => Navigator.pop(context, 'csv'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.share),
+                title: const Text('Share CSV'),
+                subtitle: const Text('Share with other apps'),
+                onTap: () => Navigator.pop(context, 'share'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+          ],
+        ),
+      );
+
+      if (exportFormat == null || !mounted) return;
+
+      // Generate CSV data
+      List<List<dynamic>> csvData = [
+        [
+          'Date',
+          'Employee ID',
+          'Status',
+          'Check-In Time',
+          'Check-Out Time',
+          'Inside Geofence',
+          'Late'
+        ],
+      ];
+
+      for (final record in records) {
+        final checkInTime = record.checkInTime != null
+            ? DateFormat('HH:mm:ss').format(record.checkInTime!)
+            : '';
+        final checkOutTime = record.checkOutTime != null
+            ? DateFormat('HH:mm:ss').format(record.checkOutTime!)
+            : '';
+        csvData.add([
+          DateFormat('yyyy-MM-dd').format(record.date),
+          record.employeeId,
+          record.status.name,
+          checkInTime,
+          checkOutTime,
+          record.isInsideGeofence ? 'Yes' : 'No',
+          record.isLate ? 'Yes' : 'No',
+        ]);
+      }
+
+      final csvString = const csv_lib.ListToCsvConverter().convert(csvData);
+
+      if (exportFormat == 'share') {
+        // Share CSV
+        final directory = await getTemporaryDirectory();
+        final fileName =
+            'attendance_report_${DateFormat('yyyyMMdd').format(DateTime.now())}.csv';
+        final file = File('${directory.path}/$fileName');
+        await file.writeAsString(csvString);
+
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          subject:
+              'Attendance Report - ${DateFormat('MMM dd, yyyy').format(DateTime.now())}',
+          text: 'Attendance report for ${records.length} records',
+        );
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('CSV shared successfully')),
+          );
+        }
+      } else {
+        // Save CSV locally
+        final directory = await getApplicationDocumentsDirectory();
+        final fileName =
+            'attendance_report_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
+        final file = File('${directory.path}/$fileName');
+        await file.writeAsString(csvString);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Report saved: ${records.length} records'),
+              action: SnackBarAction(
+                label: 'Share',
+                onPressed: () async {
+                  await Share.shareXFiles(
+                    [XFile(file.path)],
+                    subject: 'Attendance Report',
+                  );
+                },
+              ),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: ${e.toString()}'),
+            backgroundColor: Colors.red[300],
+          ),
+        );
+      }
+    }
   }
 
   Widget _buildDetailRow(String label, String value) {

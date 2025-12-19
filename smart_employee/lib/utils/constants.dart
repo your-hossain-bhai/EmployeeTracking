@@ -1,6 +1,6 @@
 // constants.dart
 // Application Constants
-// 
+//
 // This file contains all constant values used throughout the application
 // including colors, strings, API endpoints, and configuration values.
 
@@ -69,6 +69,16 @@ class AppConstants {
   static const double defaultMapZoom = 15.0;
   static const double minMapZoom = 5.0;
   static const double maxMapZoom = 20.0;
+  static const String mapTilerApiKey = 'a5fFxhWpyDQZZrUYF2ss';
+  static const String mapTilerUserAgent = 'smart-employee-app';
+  static const String mapTilerStreetsUrl =
+      'https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=$mapTilerApiKey';
+  static const String mapTilerSatelliteUrl =
+      'https://api.maptiler.com/maps/satellite/256/{z}/{x}/{y}.jpg?key=$mapTilerApiKey';
+  static const String mapTilerHybridUrl =
+      'https://api.maptiler.com/maps/hybrid/256/{z}/{x}/{y}.jpg?key=$mapTilerApiKey';
+  static const String mapTilerTerrainUrl =
+      'https://api.maptiler.com/maps/terrain/256/{z}/{x}/{y}.png?key=$mapTilerApiKey';
 
   // Notification Channel IDs
   static const String locationNotificationChannelId = 'location_tracking';
@@ -152,7 +162,8 @@ class AppStrings {
 
   // Errors
   static const String errorGeneric = 'Something went wrong';
-  static const String errorNetwork = 'Network error. Please check your connection.';
+  static const String errorNetwork =
+      'Network error. Please check your connection.';
   static const String errorLocation = 'Could not get location';
   static const String errorPermission = 'Permission denied';
 }

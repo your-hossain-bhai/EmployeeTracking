@@ -1,6 +1,6 @@
 // attendance_service.dart
 // Attendance Service
-// 
+//
 // This service manages employee attendance records including:
 // - Check-in/check-out operations
 // - Automatic attendance via geofence
@@ -103,10 +103,8 @@ class AttendanceService {
     final now = DateTime.now();
 
     // Get existing attendance
-    final doc = await _firestore
-        .collection('attendance')
-        .doc(attendanceId)
-        .get();
+    final doc =
+        await _firestore.collection('attendance').doc(attendanceId).get();
 
     if (!doc.exists) {
       throw Exception('Attendance record not found');
@@ -201,10 +199,8 @@ class AttendanceService {
     DateTime? newCheckInTime,
     DateTime? newCheckOutTime,
   }) async {
-    final doc = await _firestore
-        .collection('attendance')
-        .doc(attendanceId)
-        .get();
+    final doc =
+        await _firestore.collection('attendance').doc(attendanceId).get();
 
     if (!doc.exists) {
       throw Exception('Attendance record not found');
@@ -238,17 +234,26 @@ class AttendanceService {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
     final endOfDay = startOfDay.add(const Duration(days: 1));
+    final startTimestamp = Timestamp.fromDate(startOfDay);
+    final endTimestamp = Timestamp.fromDate(endOfDay);
 
+    // Query by employeeId only (no date range to avoid composite index)
     final snapshot = await _firestore
         .collection('attendance')
         .where('employeeId', isEqualTo: employeeId)
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-        .where('date', isLessThan: Timestamp.fromDate(endOfDay))
-        .limit(1)
+        .limit(10) // Fetch recent records
         .get();
 
-    if (snapshot.docs.isEmpty) return null;
-    return AttendanceModel.fromFirestore(snapshot.docs.first);
+    // Filter by date client-side
+    for (final doc in snapshot.docs) {
+      final date = (doc.data()['date'] as Timestamp?);
+      if (date != null &&
+          date.compareTo(startTimestamp) >= 0 &&
+          date.compareTo(endTimestamp) < 0) {
+        return AttendanceModel.fromFirestore(doc);
+      }
+    }
+    return null;
   }
 
   /// Get attendance history for an employee
@@ -292,17 +297,26 @@ class AttendanceService {
   }) async {
     final startOfDay = DateTime(date.year, date.month, date.day);
     final endOfDay = startOfDay.add(const Duration(days: 1));
+    final startTimestamp = Timestamp.fromDate(startOfDay);
+    final endTimestamp = Timestamp.fromDate(endOfDay);
 
+    // Query by companyId only (no date range to avoid composite index)
     final snapshot = await _firestore
         .collection('attendance')
         .where('companyId', isEqualTo: companyId)
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-        .where('date', isLessThan: Timestamp.fromDate(endOfDay))
         .get();
 
-    return snapshot.docs
-        .map((doc) => AttendanceModel.fromFirestore(doc))
-        .toList();
+    // Filter by date client-side
+    final results = <AttendanceModel>[];
+    for (final doc in snapshot.docs) {
+      final docDate = (doc.data()['date'] as Timestamp?);
+      if (docDate != null &&
+          docDate.compareTo(startTimestamp) >= 0 &&
+          docDate.compareTo(endTimestamp) < 0) {
+        results.add(AttendanceModel.fromFirestore(doc));
+      }
+    }
+    return results;
   }
 
   /// Stream real-time attendance updates
@@ -310,16 +324,25 @@ class AttendanceService {
     final now = DateTime.now();
     final startOfDay = DateTime(now.year, now.month, now.day);
     final endOfDay = startOfDay.add(const Duration(days: 1));
+    final startTimestamp = Timestamp.fromDate(startOfDay);
+    final endTimestamp = Timestamp.fromDate(endOfDay);
 
+    // Query by companyId only (no date range to avoid composite index)
     return _firestore
         .collection('attendance')
         .where('companyId', isEqualTo: companyId)
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-        .where('date', isLessThan: Timestamp.fromDate(endOfDay))
         .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => AttendanceModel.fromFirestore(doc))
-            .toList());
+        .map((snapshot) {
+      return snapshot.docs
+          .where((doc) {
+            final docDate = (doc.data()['date'] as Timestamp?);
+            return docDate != null &&
+                docDate.compareTo(startTimestamp) >= 0 &&
+                docDate.compareTo(endTimestamp) < 0;
+          })
+          .map((doc) => AttendanceModel.fromFirestore(doc))
+          .toList();
+    });
   }
 
   /// Upload proof image to Firebase Storage

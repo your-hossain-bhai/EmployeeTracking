@@ -26,6 +26,7 @@ import 'controllers/auth_controller.dart';
 import 'controllers/location_controller.dart';
 import 'controllers/attendance_controller.dart';
 import 'controllers/geofence_controller.dart';
+import 'controllers/theme_controller.dart';
 
 /// Application entry point
 void main() async {
@@ -106,6 +107,9 @@ void main() async {
           create: (context) => GeofenceController(
             geofenceService: geofenceService,
           ),
+        ),
+        BlocProvider<ThemeController>(
+          create: (context) => ThemeController()..add(ThemeLoaded()),
         ),
       ],
       child: const SmartEmployeeApp(),

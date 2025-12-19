@@ -1,6 +1,6 @@
 // user_model.dart
 // User/Employee data model
-// 
+//
 // This model represents a user in the system, which can be either
 // an admin or an employee. It includes profile information,
 // authentication details, and role-based access control.
@@ -10,6 +10,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// User roles in the application
 enum UserRole { admin, employee }
+
+/// Extension for UserRole to provide string representation
+extension UserRoleX on UserRole {
+  String get label => name.toUpperCase();
+}
 
 /// User model representing both admins and employees
 class UserModel extends Equatable {

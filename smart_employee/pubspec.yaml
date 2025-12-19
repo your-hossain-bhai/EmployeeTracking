@@ -25,7 +25,8 @@ dependencies:
   firebase_messaging: ^15.1.6
 
   # Maps & Location
-  google_maps_flutter: ^2.9.0
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
   geolocator: ^13.0.2
   permission_handler: ^11.3.1
 
@@ -49,6 +50,8 @@ dependencies:
   uuid: ^4.5.1
   equatable: ^2.0.5
   path_provider: ^2.1.5
+  share_plus: ^10.1.3
+  csv: ^6.0.0
 
   # Material Design
   cupertino_icons: ^1.0.8

@@ -1,6 +1,6 @@
 // attendance_model.dart
 // Attendance record data model
-// 
+//
 // This model represents an attendance record for an employee,
 // including check-in/check-out times, location data, proof images,
 // and geofence verification status.
@@ -36,28 +36,28 @@ class AttendanceModel extends Equatable {
   final DateTime? checkOutTime;
   final AttendanceStatus status;
   final CheckInMethod checkInMethod;
-  
+
   // Location data at check-in/out
   final double? checkInLatitude;
   final double? checkInLongitude;
   final double? checkOutLatitude;
   final double? checkOutLongitude;
-  
+
   // Geofence verification
   final String? geofenceId;
   final bool isInsideGeofence;
   final bool isGeofenceVerified;
-  
+
   // Proof uploads
   final String? checkInProofUrl;
   final String? checkOutProofUrl;
-  
+
   // Notes and metadata
   final String? notes;
   final bool isManuallyOverridden;
   final String? overriddenBy;
   final String? overrideReason;
-  
+
   // Sync status
   final bool isSynced;
   final DateTime createdAt;
@@ -98,7 +98,22 @@ class AttendanceModel extends Equatable {
 
   /// Check if currently checked in
   bool get isCheckedIn =>
-      checkInTime != null && checkOutTime == null && status == AttendanceStatus.checkedIn;
+      checkInTime != null &&
+      checkOutTime == null &&
+      status == AttendanceStatus.checkedIn;
+
+  /// Check if check-in was late (after 9:15 AM)
+  bool get isLate {
+    if (checkInTime == null) return false;
+    final lateThreshold = DateTime(
+      checkInTime!.year,
+      checkInTime!.month,
+      checkInTime!.day,
+      9,
+      15,
+    );
+    return checkInTime!.isAfter(lateThreshold);
+  }
 
   /// Create AttendanceModel from Firestore document
   factory AttendanceModel.fromFirestore(DocumentSnapshot doc) {
@@ -143,7 +158,8 @@ class AttendanceModel extends Equatable {
       id: json['id'] ?? '',
       employeeId: json['employeeId'] ?? '',
       companyId: json['companyId'] ?? '',
-      date: json['date'] != null ? DateTime.parse(json['date']) : DateTime.now(),
+      date:
+          json['date'] != null ? DateTime.parse(json['date']) : DateTime.now(),
       checkInTime: json['checkInTime'] != null
           ? DateTime.parse(json['checkInTime'])
           : null,

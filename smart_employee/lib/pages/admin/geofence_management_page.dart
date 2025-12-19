@@ -1,27 +1,29 @@
 // geofence_management_page.dart
-// Geofence Management Page - Google Maps Version
+// Geofence Management Page - MapTiler (flutter_map)
 
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../../controllers/auth_controller.dart';
 import '../../controllers/geofence_controller.dart';
 import '../../models/geofence_model.dart';
+import '../../utils/constants.dart';
 
-/// Google Maps style options
+/// Map styles backed by MapTiler
 enum MapStyle {
-  normal('Normal', MapType.normal),
-  satellite('Satellite', MapType.satellite),
-  terrain('Terrain', MapType.terrain),
-  hybrid('Hybrid', MapType.hybrid);
+  streets('Streets', AppConstants.mapTilerStreetsUrl),
+  satellite('Satellite', AppConstants.mapTilerSatelliteUrl),
+  terrain('Terrain', AppConstants.mapTilerTerrainUrl),
+  hybrid('Hybrid', AppConstants.mapTilerHybridUrl);
 
   final String label;
-  final MapType mapType;
+  final String tileUrl;
 
-  const MapStyle(this.label, this.mapType);
+  const MapStyle(this.label, this.tileUrl);
 }
 
 /// Geofence management page for admin
@@ -33,25 +35,19 @@ class GeofenceManagementPage extends StatefulWidget {
 }
 
 class _GeofenceManagementPageState extends State<GeofenceManagementPage> {
-  GoogleMapController? _mapController;
-  Set<Circle> _circles = {};
-  Set<Marker> _markers = {};
+  final MapController _mapController = MapController();
+  List<CircleMarker> _circles = [];
+  List<Marker> _markers = [];
 
-  MapStyle _currentMapStyle = MapStyle.normal;
+  MapStyle _currentMapStyle = MapStyle.streets;
 
   // Default center (Bangladesh - IIUC area)
-  static const LatLng _defaultCenter = LatLng(22.4994, 91.7773);
+  static final LatLng _defaultCenter = LatLng(22.4994, 91.7773);
 
   @override
   void initState() {
     super.initState();
     _loadGeofences();
-  }
-
-  @override
-  void dispose() {
-    _mapController?.dispose();
-    super.dispose();
   }
 
   void _loadGeofences() {
@@ -64,51 +60,63 @@ class _GeofenceManagementPageState extends State<GeofenceManagementPage> {
   }
 
   void _updateMapElements(List<GeofenceModel> geofences) {
-    _circles.clear();
-    _markers.clear();
-
-    for (final geofence in geofences) {
-      _circles.add(
-        Circle(
-          circleId: CircleId(geofence.id),
-          center: LatLng(geofence.latitude, geofence.longitude),
-          radius: geofence.radius,
-          fillColor: _getGeofenceColor(geofence.type).withOpacity(0.2),
-          strokeColor: _getGeofenceColor(geofence.type),
-          strokeWidth: 2,
-        ),
-      );
-
-      _markers.add(
-        Marker(
-          markerId: MarkerId(geofence.id),
-          position: LatLng(geofence.latitude, geofence.longitude),
-          infoWindow: InfoWindow(
-            title: geofence.name,
-            snippet: '${geofence.radius}m • ${geofence.type.name}',
+    _circles = geofences
+        .map(
+          (geofence) => CircleMarker(
+            point: LatLng(geofence.latitude, geofence.longitude),
+            radius: geofence.radius,
+            useRadiusInMeter: true,
+            color: _getGeofenceColor(geofence.type).withOpacity(0.2),
+            borderColor: _getGeofenceColor(geofence.type),
+            borderStrokeWidth: 2,
           ),
-          icon: BitmapDescriptor.defaultMarkerWithHue(
-            _getMarkerHue(geofence.type),
-          ),
-          onTap: () => _showGeofenceDetails(geofence),
-        ),
-      );
-    }
-  }
+        )
+        .toList();
 
-  double _getMarkerHue(GeofenceType type) {
-    switch (type) {
-      case GeofenceType.office:
-        return BitmapDescriptor.hueBlue;
-      case GeofenceType.branch:
-        return BitmapDescriptor.hueGreen;
-      case GeofenceType.warehouse:
-        return BitmapDescriptor.hueOrange;
-      case GeofenceType.clientSite:
-        return BitmapDescriptor.hueViolet;
-      case GeofenceType.custom:
-        return BitmapDescriptor.hueRose;
-    }
+    _markers = geofences
+        .map(
+          (geofence) => Marker(
+            point: LatLng(geofence.latitude, geofence.longitude),
+            width: 40,
+            height: 40,
+            alignment: Alignment.center,
+            child: GestureDetector(
+              onTap: () => _showGeofenceDetails(geofence),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      geofence.name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: _getGeofenceColor(geofence.type),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        )
+        .toList();
   }
 
   Color _getGeofenceColor(GeofenceType type) {
@@ -186,23 +194,57 @@ class _GeofenceManagementPageState extends State<GeofenceManagementPage> {
             children: [
               Expanded(
                 flex: 2,
-                child: GoogleMap(
-                  initialCameraPosition: const CameraPosition(
-                    target: _defaultCenter,
-                    zoom: 12,
-                  ),
-                  mapType: _currentMapStyle.mapType,
-                  markers: _markers,
-                  circles: _circles,
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: true,
-                  zoomControlsEnabled: true,
-                  onMapCreated: (controller) {
-                    _mapController = controller;
-                  },
-                  onLongPress: (position) {
-                    _showAddGeofenceDialogAtPosition(position);
-                  },
+                child: Stack(
+                  children: [
+                    FlutterMap(
+                      mapController: _mapController,
+                      options: MapOptions(
+                        initialCenter: _defaultCenter,
+                        initialZoom: 12,
+                        minZoom: AppConstants.minMapZoom,
+                        maxZoom: AppConstants.maxMapZoom,
+                        onLongPress: (tapPos, point) =>
+                            _showAddGeofenceDialogAtPosition(point),
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate: _currentMapStyle.tileUrl,
+                          userAgentPackageName: AppConstants.mapTilerUserAgent,
+                          minZoom: AppConstants.minMapZoom,
+                          maxZoom: AppConstants.maxMapZoom,
+                        ),
+                        CircleLayer(circles: _circles),
+                        MarkerLayer(markers: _markers),
+                        const RichAttributionWidget(
+                          attributions: [
+                            TextSourceAttribution(
+                              '© MapTiler © OpenStreetMap contributors',
+                              prependCopyright: true,
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    Positioned(
+                      bottom: 12,
+                      right: 12,
+                      child: FloatingActionButton.small(
+                        heroTag: 'geo_my_location',
+                        onPressed: () async {
+                          final position = await Geolocator.getCurrentPosition(
+                            locationSettings: const LocationSettings(
+                              accuracy: LocationAccuracy.high,
+                            ),
+                          );
+                          _mapController.move(
+                            LatLng(position.latitude, position.longitude),
+                            15,
+                          );
+                        },
+                        child: const Icon(Icons.my_location),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               Expanded(
@@ -225,22 +267,22 @@ class _GeofenceManagementPageState extends State<GeofenceManagementPage> {
                               '${geofence.radius}m • ${geofence.type.name}',
                             ),
                             trailing: PopupMenuButton(
-                              itemBuilder: (context) => [
-                                const PopupMenuItem(
+                              itemBuilder: (context) => const [
+                                PopupMenuItem(
                                   value: 'view',
                                   child: ListTile(
                                     leading: Icon(Icons.visibility),
                                     title: Text('View on Map'),
                                   ),
                                 ),
-                                const PopupMenuItem(
+                                PopupMenuItem(
                                   value: 'edit',
                                   child: ListTile(
                                     leading: Icon(Icons.edit),
                                     title: Text('Edit'),
                                   ),
                                 ),
-                                const PopupMenuItem(
+                                PopupMenuItem(
                                   value: 'delete',
                                   child: ListTile(
                                     leading:
@@ -253,12 +295,12 @@ class _GeofenceManagementPageState extends State<GeofenceManagementPage> {
                               onSelected: (value) {
                                 switch (value) {
                                   case 'view':
-                                    _mapController?.animateCamera(
-                                      CameraUpdate.newLatLngZoom(
-                                        LatLng(geofence.latitude,
-                                            geofence.longitude),
-                                        16,
+                                    _mapController.move(
+                                      LatLng(
+                                        geofence.latitude,
+                                        geofence.longitude,
                                       ),
+                                      16,
                                     );
                                     break;
                                   case 'edit':
@@ -538,11 +580,9 @@ class _GeofenceManagementPageState extends State<GeofenceManagementPage> {
                   child: ElevatedButton(
                     onPressed: () {
                       Navigator.of(context).pop();
-                      _mapController?.animateCamera(
-                        CameraUpdate.newLatLngZoom(
-                          LatLng(geofence.latitude, geofence.longitude),
-                          16,
-                        ),
+                      _mapController.move(
+                        LatLng(geofence.latitude, geofence.longitude),
+                        16,
                       );
                     },
                     child: const Text('View on Map'),
